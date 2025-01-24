@@ -2,7 +2,7 @@
 
 ## Introducción 🚀
 
-Este proyecto permite realizar las operaciones de un CRUD (Crear, Leer, Actualizar, Eliminar) sobre embeddings de texto. Utilizando la librería `sentence-transformers` para generar los embeddings y `pandas` y `numpy` para almacenarlos y realizar consultas. Además, he integrado una base de datos vectorial simplificada usando un DataFrame de `pandas`, facilitando la gestión de los embeddings.
+Este proyecto permite realizar las operaciones de un CRUD (Crear, Leer, Actualizar, Eliminar) sobre embeddings de texto. Utilizando la librería `sentence-transformers` para generar los embeddings. Además, he integrado una base de datos vectorial usando `Qdrant`, facilitando la gestión de los embeddings.
 
 ### Características
 
@@ -16,29 +16,31 @@ Este proyecto permite realizar las operaciones de un CRUD (Crear, Leer, Actualiz
 
 ## 📦 Instrucciones de Configuración
 
-Para comenzar a utilizar el proyecto, sigue estos pasos:
+Para comenzar a utilizar el proyecto, ejecute los siguientes comandos:
 
 ```bash
 git clone https://github.com/VeronicaRuizBautista/CRUD_Embeddings.git
 
-cd CRUD_Embedding
+cd CRUD_Embeddings
 
 pip install -r requirements.txt
+streamlit run app.py
+
 ```
+### Ingrese a:
+
+**http://localhost:8501**
 
 ---
 
 ## 🏗️Estructura del Proyecto
 
-1. **Instalación de dependencias:**
+**Instalación de dependencias:**
    - `sentence-transformers`: Para generar los embeddings de texto.
-   - `numpy`: Para trabajar con arreglos y cálculos.
-   - `pandas`: Para almacenar y gestionar los datos de los embeddings.
+   - `Qdrant`: Para almacenar y gestionar los datos de los embeddings.
+   - `Streamlit`: Para almacenar mostrar el frontend.
 
-2. **Configuración de la Base de Datos Vectorial 📊:**
-   - Utiliza un **DataFrame de `pandas`** para almacenar los embeddings generados. Esta estructura funciona como una base de datos vectorial simplificada, permitiendo realizar consultas sin necesidad de configurar una base de datos compleja.
-
-3. **CRUD de Embeddings:**
+**CRUD de Embeddings:**
    - **Crear**: Inserta embeddings en el DataFrame.
    - **Leer**: Consulta de embeddings creados
    - **Leer similares**: Consulta de embeddings más similares a un vector de consulta usando similitud de coseno.
@@ -65,14 +67,32 @@ Los embeddings son representaciones numéricas de palabras o frases en un espaci
 
 ## 📝 Ejemplos de Uso
 
-### 1. Crear: Insertar embeddings en el DataFrame.
+### 1. Crear: Insertar embeddings en Qdrant.
 
 ```python
 from sentence_transformers import SentenceTransformer
-import pandas as pd
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance
+import random
 
 # Inicializar el modelo
 model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Inicializar el cliente de Qdrant
+client = QdrantClient(
+    url="https://c0ecc735-4daa-4faf-8e47-87ec35ba28bc.europe-west3-0.gcp.cloud.qdrant.io:6333", 
+    https=True,
+    api_key="zXQmNpc6rGfyeSiibzntmDDph_xegr3cI1DoiK5hvK6Uj2WYGKcTdA",
+)
+
+# Nombre del índice
+index_name = "embeddings_index"
+
+# Asegurarse de que el índice existe
+client.recreate_collection(
+    collection_name=index_name,
+    vectors_config=VectorParams(size=384, distance=Distance.COSINE)  # Tamaño del embedding
+)
 
 # Datos de ejemplo
 texts = ["Este es el primer ejemplo", "Este es el segundo ejemplo", "Y este es el tercero"]
@@ -80,51 +100,99 @@ texts = ["Este es el primer ejemplo", "Este es el segundo ejemplo", "Y este es e
 # Generar los embeddings
 embeddings = model.encode(texts)
 
-# Crear un DataFrame para almacenar los embeddings
-df = pd.DataFrame(embeddings)
-df['id'] = [1, 2, 3]  # Asignar un ID único a cada embedding
-print(df)
+# Generar IDs aleatorios
+def generar_id_numerico():
+    return random.randint(1000, 9999)
+
+# Insertar los embeddings en Qdrant
+for texto, embedding in zip(texts, embeddings):
+    nuevo_id = generar_id_numerico()
+    client.upsert(
+        collection_name=index_name,
+        points=[{
+            'id': nuevo_id,
+            'vector': embedding.tolist(),
+            'payload': {'texto': texto}
+        }]
+    )
 ```
 
-### 2. Leer: Consultar los embeddings por ID.
+## 1. Leer: Consultar los embeddings por ID.
+
 ```python
+
 # Consultar un embedding específico por su ID
+def obtener_embedding_por_id(id_buscar):
+    scroll_response = client.scroll(collection_name=index_name, limit=1000)
+    
+    for batch in scroll_response[0]:
+        if batch.id == id_buscar:
+            return batch.payload["texto"], batch.vector
+
+    return None  # Si no se encuentra el ID
+
 id_buscar = 2
-embedding_buscar = df[df['id'] == id_buscar].drop('id', axis=1).values
+embedding_buscar = obtener_embedding_por_id(id_buscar)
 print("Embedding encontrado:", embedding_buscar)
 ```
+## 2. Leer Similares: Encontrar embeddings más similares usando similitud de coseno.
 
+```python
+# Consultar un embedding específico por su ID
+def obtener_embedding_por_id(id_buscar):
+    scroll_response = client.scroll(collection_name=index_name, limit=1000)
+    
+    for batch in scroll_response[0]:
+        if batch.id == id_buscar:
+            return batch.payload["texto"], batch.vector
 
+    return None  # Si no se encuentra el ID
+
+id_buscar = 2
+embedding_buscar = obtener_embedding_por_id(id_buscar)
+print("Embedding encontrado:", embedding_buscar)
+
+```
 ### 3. Leer Similares: Encontrar embeddings más similares usando similitud de coseno.
 
 ```python
 from sklearn.metrics.pairwise import cosine_similarity
+
 # Generar un vector de consulta (por ejemplo, el primer documento)
-query_embedding = df.drop('id', axis=1).iloc[0].values.reshape(1, -1)
+query_embedding = model.encode(["Este es el primer ejemplo"])[0]
 
-# Calcular la similitud de coseno entre el embedding de consulta y todos los demás embeddings
-similarities = cosine_similarity(query_embedding, df.drop('id', axis=1))
-
-# Obtener los índices de los embeddings más similares
-top_similar_indexes = similarities.argsort()[0][-2:][::-1]  # Excluyendo el primer elemento (el mismo documento)
+# Buscar los puntos más similares
+resultados = client.search(
+    collection_name=index_name,
+    query_vector=query_embedding.tolist(),
+    limit=5
+)
 
 # Mostrar los embeddings más similares
 print("Embeddings más similares a la consulta:")
-for idx in top_similar_indexes:
-    print(df.iloc[idx])
+for res in resultados:
+    print(f"ID: {res.id}, Texto: {res.payload['texto']}, Score: {res.score}")
+
 ```
 
 ### 4. Actualizar: Modificar un embedding existente.
-
 ```python
 # Supongamos que queremos actualizar el embedding con ID 2
 id_actualizar = 2
 nuevo_texto = "Este es el segundo documento modificado"
-nuevo_embedding = model.encode([nuevo_texto])
+nuevo_embedding = model.encode([nuevo_texto])[0]
 
-# Actualizar el embedding en el DataFrame
-df.loc[df['id'] == id_actualizar, df.columns != 'id'] = nuevo_embedding
-print("Embedding actualizado:", df[df['id'] == id_actualizar])
+# Actualizar el embedding en Qdrant
+client.upsert(
+    collection_name=index_name,
+    points=[{
+        'id': id_actualizar,
+        'vector': nuevo_embedding.tolist(),
+        'payload': {'texto': nuevo_texto}
+    }]
+)
+
+print(f"Embedding con ID {id_actualizar} actualizado.")
 ```
 
 ### 5. Eliminar: Eliminar un embedding por su ID.
@@ -132,20 +200,30 @@ print("Embedding actualizado:", df[df['id'] == id_actualizar])
 ```python
 # Eliminar un embedding por su ID
 id_eliminar = 3
-df = df[df['id'] != id_eliminar]
-print(f"Embedding con ID {id_eliminar} eliminado:", df)
+client.delete(
+    collection_name=index_name,
+    points_selector=[id_eliminar]
+)
+
+print(f"Embedding con ID {id_eliminar} eliminado.")
+
 ```
 ---
 ## Imagenes🖼️
 
-![alt text](image.png)
+# Crear
+![alt text](img/image.png)
 
-![alt text](image-1.png)
+# Consultar
+![alt text](img/image2.png)
 
-![alt text](image-2.png)
+# Consultar Similares
 
-![alt text](image-3.png)
-![alt text](image-4.png)
+![alt text](img/image3.png)
 
-![alt text](image-5.png)
-![alt text](image-6.png)
+# Actualiar
+![alt text](img/image4.png)
+
+# Eliminar
+
+![alt text](img/image5.png)
