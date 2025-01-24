@@ -80,9 +80,9 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Inicializar el cliente de Qdrant
 client = QdrantClient(
-    url="https://c0ecc735-4daa-4faf-8e47-87ec35ba28bc.europe-west3-0.gcp.cloud.qdrant.io:6333", 
+    url="<dominio>", 
     https=True,
-    api_key="zXQmNpc6rGfyeSiibzntmDDph_xegr3cI1DoiK5hvK6Uj2WYGKcTdA",
+    api_key="<api-key>",
 )
 
 # Nombre del índice
