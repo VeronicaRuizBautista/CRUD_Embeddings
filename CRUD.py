@@ -8,7 +8,6 @@ import random
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
-import numpy as np
 
 
 # Crear el modelo de embeddings
